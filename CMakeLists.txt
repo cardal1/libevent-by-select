@@ -8,5 +8,10 @@ set(SOURCE_FILES
         event.h
         event_struct.h
         util.h
-        main.c)
+        queue_test.c
+        evthread.c
+        evmap.c
+        evthread-internal.h
+        util-internal.h
+        minheap-internal.h)
 add_executable(libevent_by_select ${SOURCE_FILES})

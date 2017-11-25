@@ -6,7 +6,7 @@
 #define LIBEVENT_TEST_EVENT_H
 
 #include "event_struct.h"
-#include "../event-internal.h"
+#include "event-internal.h"
 
 
 struct event_base *event_base_new(void);

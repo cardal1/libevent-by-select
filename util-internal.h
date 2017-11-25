@@ -1,0 +1,10 @@
+//
+// Created by james on 23/11/2017.
+//
+
+#ifndef LIBEVENT_TEST_UTIL_INTERNAL_H
+#define LIBEVENT_TEST_UTIL_INTERNAL_H
+
+#define EVUTIL_UNLIKELY(p) (p)
+
+#endif //LIBEVENT_TEST_UTIL_INTERNAL_H
