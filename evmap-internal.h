@@ -97,6 +97,7 @@ int evmap_foreach_event_(struct event_base *base,
                          event_base_foreach_event_cb fn,
                          void *arg);
 
-
+#define N_ACTIVE_CALLBACKS(base)					\
+	((base)->event_count_active)
 
 #endif //LIBEVENT_TEST_EVMAP_INTERNAL_H

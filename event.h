@@ -6,7 +6,6 @@
 #define LIBEVENT_TEST_EVENT_H
 
 #include "event_struct.h"
-#include "event-internal.h"
 
 
 struct event_base *event_base_new(void);
@@ -14,7 +13,24 @@ struct event_base *event_base_new(void);
 int
 event_add(struct event *ev, const struct timeval *tv);
 
+int event_base_dispatch(struct event_base *);
 
+/** @name Loop flags
+
+    These flags control the behavior of event_base_loop().
+ */
+/**@{*/
+/** Block until we have an active event, then exit once all active events
+ * have had their callbacks run. */
+#define EVLOOP_ONCE	0x01
+/** Do not block: see which events are ready now, run the callbacks
+ * of the highest-priority ones, then exit. */
+#define EVLOOP_NONBLOCK	0x02
+/** Do not exit the loop because we have no pending events.  Instead, keep
+ * running until event_base_loopexit() or event_base_loopbreak() makes us
+ * stop.
+ */
+#define EVLOOP_NO_EXIT_ON_EMPTY 0x04
 /**
  * @name event flags
  *
