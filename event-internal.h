@@ -24,6 +24,29 @@
 #define ev_callback ev_evcallback.evcb_cb_union.evcb_callback
 #define ev_arg ev_evcallback.evcb_arg
 
+/** @name Event closure codes
+
+    Possible values for evcb_closure in struct event_callback
+
+    @{
+ */
+/** A regular event. Uses the evcb_callback callback */
+#define EV_CLOSURE_EVENT 0
+/** A signal event. Uses the evcb_callback callback */
+#define EV_CLOSURE_EVENT_SIGNAL 1
+/** A persistent non-signal event. Uses the evcb_callback callback */
+#define EV_CLOSURE_EVENT_PERSIST 2
+/** A simple callback. Uses the evcb_selfcb callback. */
+#define EV_CLOSURE_CB_SELF 3
+/** A finalizing callback. Uses the evcb_cbfinalize callback. */
+#define EV_CLOSURE_CB_FINALIZE 4
+/** A finalizing event. Uses the evcb_evfinalize callback. */
+#define EV_CLOSURE_EVENT_FINALIZE 5
+/** A finalizing event that should get freed after. Uses the evcb_evfinalize
+ * callback. */
+#define EV_CLOSURE_EVENT_FINALIZE_FREE 6
+/** @} */
+
 /** Structure to define the backend of a given event_base. */
 struct eventop {
     /** The name of this backend. */
@@ -81,6 +104,47 @@ struct event_signal_map {
     int nentries;
 };
 
+/* A list of events waiting on a given 'common' timeout value.  Ordinarily,
+ * events waiting for a timeout wait on a minheap.  Sometimes, however, a
+ * queue can be faster.
+ **/
+struct common_timeout_list {
+    /* List of events currently waiting in the queue. */
+    struct event_list events;
+    /* 'magic' timeval used to indicate the duration of events in this
+     * queue. */
+    struct timeval duration;
+    /* Event that triggers whenever one of the events in the queue is
+     * ready to activate */
+    struct event timeout_event;
+    /* The event_base that this timeout list is part of */
+    struct event_base *base;
+};
+
+
+/** Mask used to get the real tv_usec value from a common timeout. */
+#define COMMON_TIMEOUT_MICROSECONDS_MASK       0x000fffff
+
+TAILQ_HEAD(evcallback_list, event_callback);
+
+/* Sets up an event for processing once */
+struct event_once {
+    LIST_ENTRY(event_once) next_once;
+    struct event ev;
+
+    void (*cb)(evutil_socket_t, short, void *);
+    void *arg;
+};
+
+struct event_change;
+
+/* List of 'changes' since the last call to eventop.dispatch.  Only maintained
+ * if the backend is using changesets. */
+struct event_changelist {
+    struct event_change *changes;
+    int n_changes;
+    int changes_size;
+};
 
 struct event_base {
     /** Function pointers and other data to describe this event_base's
@@ -89,19 +153,94 @@ struct event_base {
     /** Pointer to backend-specific data. */
     void *evbase;
 
+    /** List of changes to tell backend about at next dispatch.  Only used
+     * by the O(1) backends. */
+    struct event_changelist changelist;
+
     /** Function pointers used to describe the backend that this event_base
- * uses for signals */
+     * uses for signals */
     const struct eventop *evsigsel;
     /** Data to implement the common signal handelr code. */
     struct evsig_info sig;
 
+    /** Number of virtual events */
+    int virtual_event_count;
+    /** Maximum number of virtual events active */
+    int virtual_event_count_max;
+    /** Number of total events added to this event_base */
+    int event_count;
+    /** Maximum number of total events added to this event_base */
+    int event_count_max;
+    /** Number of total events active in this event_base */
+    int event_count_active;
+    /** Maximum number of total events active in this event_base */
+    int event_count_active_max;
+
+    /** Set if we should terminate the loop once we're done processing
+     * events. */
+    int event_gotterm;
+    /** Set if we should terminate the loop immediately */
+    int event_break;
+    /** Set if we should start a new instance of the loop immediately. */
+    int event_continue;
+
+    /** The currently running priority of events */
+    int event_running_priority;
+
+    /** Set if we're running the event_base_loop function, to prevent
+     * reentrant invocation. */
+    int running_loop;
+
+    /** Set to the number of deferred_cbs we've made 'active' in the
+     * loop.  This is a hack to prevent starvation; it would be smarter
+     * to just use event_config_set_max_dispatch_interval's max_callbacks
+     * feature */
+    int n_deferreds_queued;
+
+    /* Active event management. */
+    /** An array of nactivequeues queues for active event_callbacks (ones
+     * that have triggered, and whose callbacks need to be called).  Low
+     * priority numbers are more important, and stall higher ones.
+     */
+    struct evcallback_list *activequeues;
+    /** The length of the activequeues array */
+    int nactivequeues;
+    /** A list of event_callbacks that should become active the next time
+     * we process events, but not this time. */
+    struct evcallback_list active_later_queue;
+
+    /* common timeout logic */
+
+    /** An array of common_timeout_list* for all of the common timeout
+     * values we know. */
+    struct common_timeout_list **common_timeout_queues;
+    /** The number of entries used in common_timeout_queues */
+    int n_common_timeouts;
+    /** The total size of common_timeout_queues. */
+    int n_common_timeouts_allocated;
+
     /** Mapping from file descriptors to enabled (added) events */
     struct event_io_map io;
-
 
     /** Mapping from signal numbers to enabled (added) events. */
     struct event_signal_map sigmap;
 
+    /** Priority queue of events with timeouts. */
+    struct min_heap timeheap;
+
+    /** Stored timeval: used to avoid calling gettimeofday/clock_gettime
+     * too often. */
+    struct timeval tv_cache;
+
+    struct evutil_monotonic_timer monotonic_timer;
+
+    /** Difference between internal time (maybe from clock_gettime) and
+     * gettimeofday. */
+    struct timeval tv_clock_diff;
+    /** Second in which we last updated tv_clock_diff, in monotonic time. */
+    time_t last_updated_clock_diff;
+
+#ifndef EVENT__DISABLE_THREAD_SUPPORT
     /* threading support */
     /** The thread currently running the event_loop for this base */
     unsigned long th_owner_id;
@@ -112,12 +251,61 @@ struct event_base {
     void *current_event_cond;
     /** Number of threads blocking on current_event_cond. */
     int current_event_waiters;
-
+#endif
     /** The event whose callback is executing right now */
     struct event_callback *current_event;
 
-    /** Priority queue of events with timeouts. */
-    struct min_heap timeheap;
+#ifdef _WIN32
+    /** IOCP support structure, if IOCP is enabled. */
+	struct event_iocp_port *iocp;
+#endif
+
+    /** Flags that this base was configured with */
+    enum event_base_config_flag flags;
+
+    struct timeval max_dispatch_time;
+    int max_dispatch_callbacks;
+    int limit_callbacks_after_prio;
+
+    /* Notify main thread to wake up break, etc. */
+    /** True if the base already has a pending notify, and we don't need
+     * to add any more. */
+    int is_notify_pending;
+    /** A socketpair used by some th_notify functions to wake up the main
+     * thread. */
+    evutil_socket_t th_notify_fd[2];
+    /** An event used by some th_notify functions to wake up the main
+     * thread. */
+    struct event th_notify;
+    /** A function used to wake up the main thread from another thread. */
+    int (*th_notify_fn)(struct event_base *base);
+
+    /** Saved seed for weak random number generator. Some backends use
+     * this to produce fairness among sockets. Protected by th_base_lock. */
+    struct evutil_weakrand_state weakrand_seed;
+
+    /** List of event_onces that have not yet fired. */
+    LIST_HEAD(once_event_list, event_once) once_events;
+
+};
+
+struct event_config_entry {
+    TAILQ_ENTRY(event_config_entry) next;
+
+    const char *avoid_method;
+};
+
+/** Internal structure: describes the configuration we want for an event_base
+ * that we're about to allocate. */
+struct event_config {
+    TAILQ_HEAD(event_configq, event_config_entry) entries;
+
+    int n_cpus_hint;
+    struct timeval max_dispatch_interval;
+    int max_dispatch_callbacks;
+    int limit_callbacks_after_prio;
+    enum event_method_feature require_features;
+    enum event_base_config_flag flags;
 };
 
 #endif /* EVENT_INTERNAL_H_INCLUDED_ */

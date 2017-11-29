@@ -49,6 +49,12 @@ struct evmap_io {
     ev_uint16_t nclose;
 };
 
+/* An entry for an evmap_signal list: notes all the events that want to know
+   when a signal triggers. */
+struct evmap_signal {
+    struct event_dlist events;
+};
+
 /** Expand 'map' with new entries of width 'msize' until it is big enough
 	to store a value in 'slot'.
  */
@@ -203,4 +209,25 @@ evmap_signal_add_(struct event_base *base, int sig, struct event *ev)
     LIST_INSERT_HEAD(&ctx->events, ev, ev_signal_next);
 
     return (1);
+}
+
+void
+evmap_io_initmap_(struct event_io_map* ctx)
+{
+    evmap_signal_initmap_(ctx);
+}
+
+void
+evmap_signal_initmap_(struct event_signal_map *ctx)
+{
+    ctx->nentries = 0;
+    ctx->entries = NULL;
+}
+
+void
+event_changelist_init_(struct event_changelist *changelist)
+{
+    changelist->changes = NULL;
+    changelist->changes_size = 0;
+    changelist->n_changes = 0;
 }

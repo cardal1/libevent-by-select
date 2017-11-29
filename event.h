@@ -93,6 +93,60 @@ enum event_method_feature {
 };
 
 /**
+   A flag passed to event_config_set_flag().
+
+    These flags change the behavior of an allocated event_base.
+
+    @see event_config_set_flag(), event_base_new_with_config(),
+       event_method_feature
+ */
+enum event_base_config_flag {
+    /** Do not allocate a lock for the event base, even if we have
+        locking set up.
+
+        Setting this option will make it unsafe and nonfunctional to call
+        functions on the base concurrently from multiple threads.
+    */
+            EVENT_BASE_FLAG_NOLOCK = 0x01,
+    /** Do not check the EVENT_* environment variables when configuring
+        an event_base  */
+            EVENT_BASE_FLAG_IGNORE_ENV = 0x02,
+    /** Windows only: enable the IOCP dispatcher at startup
+
+        If this flag is set then bufferevent_socket_new() and
+        evconn_listener_new() will use IOCP-backed implementations
+        instead of the usual select-based one on Windows.
+     */
+            EVENT_BASE_FLAG_STARTUP_IOCP = 0x04,
+    /** Instead of checking the current time every time the event loop is
+        ready to run timeout callbacks, check after each timeout callback.
+     */
+            EVENT_BASE_FLAG_NO_CACHE_TIME = 0x08,
+
+    /** If we are using the epoll backend, this flag says that it is
+        safe to use Libevent's internal change-list code to batch up
+        adds and deletes in order to try to do as few syscalls as
+        possible.  Setting this flag can make your code run faster, but
+        it may trigger a Linux bug: it is not safe to use this flag
+        if you have any fds cloned by dup() or its variants.  Doing so
+        will produce strange and hard-to-diagnose bugs.
+
+        This flag can also be activated by setting the
+        EVENT_EPOLL_USE_CHANGELIST environment variable.
+
+        This flag has no effect if you wind up using a backend other than
+        epoll.
+     */
+            EVENT_BASE_FLAG_EPOLL_USE_CHANGELIST = 0x10,
+
+    /** Ordinarily, Libevent implements its time and timeout code using
+        the fastest monotonic timer that we have.  If this flag is set,
+        however, we use less efficient more precise timer, assuming one is
+        present.
+     */
+            EVENT_BASE_FLAG_PRECISE_TIMER = 0x20
+};
+/**
  * Callback for iterating events in an event base via event_base_foreach_event
  */
 typedef int (*event_base_foreach_event_cb)(const struct event_base *, const struct event *, void *);

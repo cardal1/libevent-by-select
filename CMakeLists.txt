@@ -12,6 +12,12 @@ set(SOURCE_FILES
         evthread.c
         evmap.c
         evthread-internal.h
+        event-internal.h
+        evmap-internal.h
+        evsignal-internal.h
+        mm-internal.h
+        changelist-internal.h
+        select.c
         util-internal.h
-        minheap-internal.h)
+        minheap-internal.h event.c thread.h)
 add_executable(libevent_by_select ${SOURCE_FILES})
