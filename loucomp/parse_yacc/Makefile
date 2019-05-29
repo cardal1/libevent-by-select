@@ -28,6 +28,9 @@ scan.o: lex.yy.c scan.h util.h globals.h
 parse.o: y.tab.c parse.h scan.h globals.h util.h
 	$(CC) $(CFLAGS) -c y.tab.c -o parse.o
 	
+lex.yy.c: tiny.l
+	$(LEX) tiny.l
+
 clean:
 	-rm tiny.out
 	-rm $(OBJS) lex.yy.c y.tab.c y.tab.h
